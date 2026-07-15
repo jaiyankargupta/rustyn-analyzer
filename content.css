@@ -1,0 +1,273 @@
+.groq-complexity-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  background-color: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #eff1f6;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  outline: none;
+}
+
+.groq-complexity-action-button:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.groq-complexity-action-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.groq-complexity-action-button.loading {
+  opacity: 0.6;
+}
+
+.groq-complexity-panel {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0;
+  padding: 14px 16px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #374151;
+  animation: rc-fade-in 0.2s ease;
+}
+
+html.dark .groq-complexity-panel,
+body.dark .groq-complexity-panel,
+.dark .groq-complexity-panel {
+  background-color: #1e1f2e;
+  border: 1px solid #2e2f3e;
+  color: #d1d5db;
+}
+
+@keyframes rc-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rc-checks-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+html.dark .rc-checks-row,
+body.dark .rc-checks-row,
+.dark .rc-checks-row {
+  color: #9ca3af;
+}
+
+.rc-check {
+  font-size: 13px;
+  margin-right: 3px;
+}
+
+.rc-check.ok {
+  color: #16a34a;
+}
+
+html.dark .rc-check.ok,
+body.dark .rc-check.ok,
+.dark .rc-check.ok {
+  color: #22c55e;
+}
+
+.rc-check.fail {
+  color: #dc2626;
+}
+
+html.dark .rc-check.fail,
+body.dark .rc-check.fail,
+.dark .rc-check.fail {
+  color: #ef4444;
+}
+
+.rc-congrats {
+  font-size: 13px;
+  color: #7c3aed;
+  margin: 4px 0 12px;
+}
+
+html.dark .rc-congrats,
+body.dark .rc-congrats,
+.dark .rc-congrats {
+  color: #a78bfa;
+}
+
+.rc-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6d28d9;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+html.dark .rc-section-title,
+body.dark .rc-section-title,
+.dark .rc-section-title {
+  color: #c4b5fd;
+}
+
+.rc-icon {
+  font-style: normal;
+}
+
+.rc-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: baseline;
+}
+
+.rc-label {
+  font-size: 12px;
+  color: #9ca3af;
+  min-width: 130px;
+  flex-shrink: 0;
+}
+
+html.dark .rc-label,
+body.dark .rc-label,
+.dark .rc-label {
+  color: #6b7280;
+}
+
+.rc-val {
+  font-size: 13px;
+  color: #1f2937;
+  flex: 1;
+  line-height: 1.4;
+}
+
+html.dark .rc-val,
+body.dark .rc-val,
+.dark .rc-val {
+  color: #e5e7eb;
+}
+
+.rc-val.rc-suggested {
+  color: #16a34a;
+}
+
+html.dark .rc-val.rc-suggested,
+body.dark .rc-val.rc-suggested,
+.dark .rc-val.rc-suggested {
+  color: #4ade80;
+}
+
+.rc-val.rc-italic {
+  font-style: italic;
+  color: #6b7280;
+}
+
+html.dark .rc-val.rc-italic,
+body.dark .rc-val.rc-italic,
+.dark .rc-val.rc-italic {
+  color: #9ca3af;
+}
+
+.rc-val.rc-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.rc-eff-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.rc-eff-left {
+  flex: 1;
+}
+
+.rc-graph {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rc-svg-graph .graph-axis {
+  stroke: #d1d5db;
+}
+
+.rc-svg-graph .graph-curve {
+  stroke: #7c3aed;
+}
+
+.rc-svg-graph .graph-text {
+  fill: #6d28d9;
+}
+
+html.dark .rc-svg-graph .graph-axis,
+body.dark .rc-svg-graph .graph-axis,
+.dark .rc-svg-graph .graph-axis {
+  stroke: #4a4a5a;
+}
+
+html.dark .rc-svg-graph .graph-curve,
+body.dark .rc-svg-graph .graph-curve,
+.dark .rc-svg-graph .graph-curve {
+  stroke: #a78bfa;
+}
+
+html.dark .rc-svg-graph .graph-text,
+body.dark .rc-svg-graph .graph-text,
+.dark .rc-svg-graph .graph-text {
+  fill: #c4b5fd;
+}
+
+.groq-complexity-error-card {
+  margin: 8px 0;
+  padding: 14px 16px;
+  background-color: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: #b91c1c;
+  animation: rc-fade-in 0.2s ease;
+}
+
+html.dark .groq-complexity-error-card,
+body.dark .groq-complexity-error-card,
+.dark .groq-complexity-error-card {
+  background-color: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+
+.groq-complexity-error-card .rc-header {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.groq-complexity-error-card p {
+  margin: 0;
+  line-height: 1.5;
+}

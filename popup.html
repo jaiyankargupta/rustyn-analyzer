@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rustyn Analyzer Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="settings-container">
+    <header class="settings-header">
+      <h1>Rustyn Analyzer</h1>
+    </header>
+
+    <main class="settings-form">
+      <div class="form-group">
+        <label for="api-key">Groq API Key</label>
+        <div class="input-wrapper">
+          <input type="password" id="api-key" placeholder="gsk_..." autocomplete="off">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="model-select">AI Model</label>
+        <select id="model-select">
+          <option value="llama-3.1-8b-instant" selected>Llama 3.1 8B Instant (Recommended)</option>
+          <option value="llama3-8b-8192">Llama 3 8B 8192</option>
+          <option value="llama-3.1-70b-versatile">Llama 3.1 70B Versatile</option>
+        </select>
+      </div>
+
+      <div class="form-actions">
+        <button id="save-btn" class="btn-primary">Save Settings</button>
+        <button id="test-btn" class="btn-secondary">Test Connection</button>
+      </div>
+
+      <div id="status-message" class="status-message hidden"></div>
+    </main>
+
+    <footer class="settings-footer">
+      <p>Your API key is stored locally in your browser and is only sent directly to Groq API.</p>
+    </footer>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
