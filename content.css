@@ -271,3 +271,34 @@ body.dark .groq-complexity-error-card,
   margin: 0;
   line-height: 1.5;
 }
+
+.rc-loading-panel {
+  text-align: center;
+  padding: 24px;
+}
+
+.rc-loading-text {
+  color: #7c3aed;
+  font-size: 14px;
+  animation: rc-pulse 1.5s infinite ease-in-out;
+}
+
+html.dark .rc-loading-text,
+body.dark .rc-loading-text,
+.dark .rc-loading-text {
+  color: #a78bfa;
+}
+
+@keyframes rc-pulse {
+  0% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.6;
+  }
+}

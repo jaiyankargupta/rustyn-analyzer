@@ -4,8 +4,10 @@
   const COMPONENT_PREFIX = "groq-complexity";
   const DETAIL_PAGE_RE = /\/problems\/[^/]+\/submissions\/\d+/;
 
-  let injectedButton = null;
   let lastUrl = location.href;
+  let injectedButton = null;
+  let extractionRetries = 0;
+  const MAX_RETRIES = 15;
 
   if (window.__rustynAnalyzerActive) return;
   window.__rustynAnalyzerActive = true;
@@ -43,6 +45,7 @@
   }
 
   function onNavigate() {
+    extractionRetries = 0;
     if (!isDetailPage()) {
       removeInjectedButton();
       removeAllCards();
@@ -57,34 +60,33 @@
 
   function tryHookButton() {
     if (!isDetailPage()) return;
-    if (document.getElementById(`${COMPONENT_PREFIX}-btn`)) return;
+
+    if (document.getElementById(`${COMPONENT_PREFIX}-btn`)) {
+      autoLoadOrTrigger();
+      return;
+    }
+
     const officialBtn = findOfficialAnalysisButton();
-    if (!officialBtn) return;
-    hookButton(officialBtn);
-    autoLoadCache();
-  }
-
-  function autoLoadCache() {
-    if (!isExtensionAlive()) return;
     const payload = extractSubmissionData();
-    if (!payload.code || !payload.problemTitle) return;
 
-    const cacheKey = `${COMPONENT_PREFIX}-cache-${payload.problemTitle}`;
-    try {
-      chrome.storage.local.get([cacheKey], (result) => {
-        if (!isExtensionAlive()) return;
-        const cached = result[cacheKey];
-        if (cached && cached.code === payload.code) {
-          renderAnalysis(cached.data);
-        }
-      });
-    } catch (_) { }
+    if (!officialBtn || !payload.code || !payload.problemTitle) {
+      if (extractionRetries < MAX_RETRIES) {
+        extractionRetries++;
+        scheduleHook();
+      }
+      return;
+    }
+
+    hookButton(officialBtn);
+    autoLoadOrTrigger(payload);
   }
 
   function findOfficialAnalysisButton() {
     for (const btn of document.querySelectorAll("button")) {
       const text = (btn.textContent || "").trim();
-      if (/^analysis$/i.test(text) && !btn.id.includes(COMPONENT_PREFIX)) return btn;
+      if (/^analysis$/i.test(text)) {
+        return btn;
+      }
     }
     return null;
   }
@@ -119,7 +121,7 @@
     let textNode;
     while (textNode = walk.nextNode()) {
       if (/analysis/i.test(textNode.nodeValue)) {
-        textNode.nodeValue = textNode.nodeValue.replace(/analysis/i, "Rustyn Analysis");
+        textNode.nodeValue = textNode.nodeValue.replace(/analysis/i, "Rustyn Analyzer");
       }
     }
 
@@ -142,7 +144,7 @@
       e.stopImmediatePropagation();
       e.stopPropagation();
       e.preventDefault();
-      triggerAnalysis();
+      manualTrigger();
     }, true);
 
     officialBtn.parentNode.insertBefore(ourBtn, officialBtn.nextSibling);
@@ -153,6 +155,55 @@
     const btn = document.getElementById(`${COMPONENT_PREFIX}-btn`);
     if (btn) btn.remove();
     injectedButton = null;
+  }
+
+  function resetButton() {
+    const btn = document.getElementById(`${COMPONENT_PREFIX}-btn`) || injectedButton;
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("loading");
+      if (btn.dataset.originalHtml) {
+        btn.innerHTML = btn.dataset.originalHtml;
+      }
+    }
+  }
+
+  function autoLoadOrTrigger(payload) {
+    if (!isExtensionAlive()) return;
+    if (!payload) {
+      payload = extractSubmissionData();
+    }
+    if (!payload.code || !payload.problemTitle) return;
+
+    lastAnalyzedUrl = location.href;
+
+    const cacheKey = `${COMPONENT_PREFIX}-cache-${payload.problemTitle}`;
+    try {
+      chrome.storage.local.get([cacheKey], (result) => {
+        if (!isExtensionAlive()) return;
+        const cached = result[cacheKey];
+        if (cached && cached.code === payload.code) {
+          renderAnalysis(cached.data);
+        } else {
+          triggerAnalysis(payload);
+        }
+      });
+    } catch (_) {
+      triggerAnalysis(payload);
+    }
+  }
+
+  function manualTrigger() {
+    if (!isExtensionAlive()) {
+      showError("Extension context was lost due to a reload. Please refresh the page.");
+      return;
+    }
+    const payload = extractSubmissionData();
+    if (!payload.code) {
+      showError("Could not extract code. Make sure you're on the submission detail page.");
+      return;
+    }
+    triggerAnalysis(payload);
   }
 
   function extractSubmissionData() {
@@ -178,106 +229,83 @@
         const pre = document.querySelector("pre");
         if (pre) data.code = pre.textContent.trim();
       }
-
-      const langLabel = document.querySelector("[class*='coding_language']");
-      if (langLabel) {
-        data.language = langLabel.textContent.trim().toLowerCase();
-      } else {
-        for (const el of document.querySelectorAll("span, div")) {
-          const t = (el.textContent || "").trim().toLowerCase();
-          if (/^(java|python|c\+\+|javascript|typescript|rust|go|swift|kotlin|c)$/.test(t)) {
-            data.language = t;
-            break;
-          }
-        }
+      if (!data.code) {
+        const codeEl = document.querySelector("code");
+        if (codeEl) data.code = codeEl.textContent.trim();
       }
-    } catch (e) {
-      console.warn("[Rustyn] extraction error:", e);
-    }
+    } catch (_) { }
     return data;
   }
 
-  function triggerAnalysis() {
-    const btn = document.getElementById(`${COMPONENT_PREFIX}-btn`) || injectedButton;
-    if (!btn) return;
-
-    btn.disabled = true;
-    btn.innerHTML = "Analyzing...";
-    btn.classList.add("loading");
-    removeAllCards();
-
-    const payload = extractSubmissionData();
-    if (!payload.code) {
-      showError("Could not extract code. Make sure you're on the submission detail page.");
+  function triggerAnalysis(payload) {
+    if (!isExtensionAlive()) {
+      showError("Extension context was lost due to a reload. Please refresh the page.");
       resetButton();
       return;
     }
+
+    const btn = document.getElementById(`${COMPONENT_PREFIX}-btn`) || injectedButton;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = "Analyzing...";
+      btn.classList.add("loading");
+    }
+
+    removeAllCards();
+    showLoadingPlaceholder();
+
     const cacheKey = `${COMPONENT_PREFIX}-cache-${payload.problemTitle}`;
-
     try {
-      chrome.storage.local.get([cacheKey], (result) => {
-        if (!isExtensionAlive()) {
-          resetButton();
-          return;
+      chrome.runtime.sendMessage({ action: "analyzeComplexity", payload }, (response) => {
+        resetButton();
+        if (chrome.runtime.lastError) { showError("Extension context lost. Please refresh the page."); return; }
+        if (response && response.success) {
+          const cacheData = { code: payload.code, data: response.data };
+          chrome.storage.local.set({ [cacheKey]: cacheData }, () => {
+            if (chrome.runtime.lastError) { }
+          });
+          renderAnalysis(response.data);
+        } else {
+          showError((response && response.error) || "An unexpected error occurred.");
         }
-
-        const cached = result[cacheKey];
-        if (cached && cached.code === payload.code) {
-          renderAnalysis(cached.data);
-          resetButton();
-          return;
-        }
-
-        chrome.runtime.sendMessage({ action: "analyzeComplexity", payload }, (response) => {
-          resetButton();
-          if (chrome.runtime.lastError) { showError("Extension context lost. Please refresh the page."); return; }
-          if (response && response.success) {
-            const cacheData = { code: payload.code, data: response.data };
-            chrome.storage.local.set({ [cacheKey]: cacheData }, () => {
-              if (chrome.runtime.lastError) console.warn("[Rustyn] cache write error:", chrome.runtime.lastError);
-            });
-            renderAnalysis(response.data);
-          } else {
-            showError((response && response.error) || "An unexpected error occurred.");
-          }
-        });
       });
-    } catch (err) {
-      showError("Extension error: " + err.message);
+    } catch (_) {
       resetButton();
+      showError("Extension error.");
     }
   }
 
-  function resetButton() {
-    const btn = document.getElementById(`${COMPONENT_PREFIX}-btn`) || injectedButton;
-    if (!btn) return;
-    btn.disabled = false;
-    btn.innerHTML = btn.dataset.originalHtml || "Analysis";
-    btn.classList.remove("loading");
-  }
+  function findStatsCardWithinDetail() {
+    const officialBtn = findOfficialAnalysisButton();
+    if (!officialBtn) return null;
 
-  function findStatsCard() {
-    for (const div of document.querySelectorAll("div")) {
-      if (div.children.length === 0 && /^runtime$/i.test((div.textContent || "").trim())) {
-        let el = div.parentElement;
-        let statsGrid = null;
-        for (let i = 0; i < 5; i++) {
-          if (el && /memory/i.test(el.textContent || "")) {
-            statsGrid = el;
-            break;
+    let parent = officialBtn.parentElement;
+    while (parent) {
+      const txt = parent.textContent || "";
+      if (/runtime/i.test(txt) && /memory/i.test(txt) && /beats/i.test(txt)) {
+        for (const el of parent.querySelectorAll("div, span, p")) {
+          if (/^runtime$/i.test((el.textContent || "").trim())) {
+            let elStatsGrid = el.parentElement;
+            while (elStatsGrid && elStatsGrid !== parent) {
+              const innerTxt = elStatsGrid.textContent || "";
+              if (/memory/i.test(innerTxt) && /beats/i.test(innerTxt)) {
+                if (elStatsGrid.parentElement) {
+                  return elStatsGrid.parentElement;
+                }
+                return elStatsGrid;
+              }
+              elStatsGrid = elStatsGrid.parentElement;
+            }
           }
-          if (el) el = el.parentElement;
-        }
-        if (statsGrid) {
-          return statsGrid.parentElement;
         }
       }
+      parent = parent.parentElement;
     }
     return null;
   }
 
   function insertBeforeStats(el) {
-    const statsCard = findStatsCard();
+    const statsCard = findStatsCardWithinDetail();
     if (statsCard && statsCard.parentNode) {
       statsCard.parentNode.insertBefore(el, statsCard);
     } else {
@@ -286,7 +314,7 @@
   }
 
   function insertAfterStats(el) {
-    const statsCard = findStatsCard();
+    const statsCard = findStatsCardWithinDetail();
     if (statsCard && statsCard.parentNode) {
       statsCard.parentNode.insertBefore(el, statsCard.nextSibling);
     } else {
@@ -295,7 +323,7 @@
   }
 
   function removeAllCards() {
-    [`${COMPONENT_PREFIX}-approach`, `${COMPONENT_PREFIX}-efficiency`, `${COMPONENT_PREFIX}-error`]
+    [`${COMPONENT_PREFIX}-approach`, `${COMPONENT_PREFIX}-efficiency`, `${COMPONENT_PREFIX}-error`, `${COMPONENT_PREFIX}-loading`]
       .forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
   }
 
@@ -305,6 +333,14 @@
     div.id = `${COMPONENT_PREFIX}-error`;
     div.className = `${COMPONENT_PREFIX}-error-card`;
     div.innerHTML = `<div class="rc-header">Analysis Error</div><p>${message}</p>`;
+    insertBeforeStats(div);
+  }
+
+  function showLoadingPlaceholder() {
+    const div = document.createElement("div");
+    div.id = `${COMPONENT_PREFIX}-loading`;
+    div.className = `${COMPONENT_PREFIX}-panel rc-loading-panel`;
+    div.innerHTML = `<div class="rc-loading-text">Analyzing complexity...</div>`;
     insertBeforeStats(div);
   }
 
