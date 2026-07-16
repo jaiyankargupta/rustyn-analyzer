@@ -70,17 +70,18 @@
   function tryHookButton() {
     if (!isDetailPage()) return;
 
+    const anchorBtn = findAnchorButton();
+    const payload = extractSubmissionData(anchorBtn);
+
     if (document.getElementById(`${COMPONENT_PREFIX}-btn`)) {
       const approachCard = document.getElementById(`${COMPONENT_PREFIX}-approach`);
       const effCard = document.getElementById(`${COMPONENT_PREFIX}-efficiency`);
-      if (!approachCard || !effCard) {
-        autoLoadOrTrigger();
+      const isAccepted = (payload.status === "Accepted");
+      if (!approachCard || (isAccepted && !effCard)) {
+        autoLoadOrTrigger(payload);
       }
       return;
     }
-
-    const anchorBtn = findAnchorButton();
-    const payload = extractSubmissionData(anchorBtn);
 
     if (!anchorBtn || !payload.code || !payload.problemTitle) {
       if (extractionRetries < MAX_RETRIES) {
@@ -189,6 +190,16 @@
     }
   }
 
+  function normalizeCode(code) {
+    return (code || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map(line => line.trimEnd())
+      .join("\n")
+      .trim();
+  }
+
   function autoLoadOrTrigger(payload) {
     if (!isExtensionAlive()) return;
     if (!payload) {
@@ -203,7 +214,7 @@
       chrome.storage.local.get([cacheKey], (result) => {
         if (!isExtensionAlive()) return;
         const cached = result[cacheKey];
-        if (cached && cached.code === payload.code && cached.status === payload.status) {
+        if (cached && normalizeCode(cached.code) === normalizeCode(payload.code) && cached.status === payload.status) {
           renderAnalysis(cached.data);
         } else {
           triggerAnalysis(payload);
