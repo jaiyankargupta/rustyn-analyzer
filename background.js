@@ -69,16 +69,23 @@ Analyze the submitted code for the given problem and respond ONLY with a JSON ob
     "codeStyle": true
   },
   "congratulations": "One short sentence praising or advising the user.",
+  "issueReason": "If any of checks.approach, checks.efficiency, or checks.codeStyle is false, explain the specific issues/flaws in 2-3 lines. If all checks are true, leave this field empty (or null).",
   "approach": {
     "current": "Name of the data structure or algorithm the user used (e.g. Hash Table, Two Pointers)",
     "suggested": "Name of the optimal approach (e.g. Hash Table)",
     "keyIdea": "One sentence describing the core idea of the optimal approach.",
-    "consider": "One thought-provoking follow-up question to deepen understanding."
+    "consider": "One thought-provoking follow-up question to deepen understanding.",
+    "alternatives": "A brief suggestion comparing the current implementation style/syntax with an alternative way (e.g., raw loop vs. STL/built-in functions, recursion vs. iteration, or language-specific idioms like std::max_element)."
   },
-  "efficiency": {
-    "currentComplexity": "O(N)",
-    "suggestedComplexity": "O(N)",
-    "suggestions": "One sentence: either praise if optimal, or a concrete tip to improve."
+  "timeComplexity": {
+    "current": "O(N)",
+    "suggested": "O(N)",
+    "suggestions": "One sentence: either praise if optimal, or a concrete tip to improve time efficiency."
+  },
+  "spaceComplexity": {
+    "current": "O(N)",
+    "suggested": "O(1)",
+    "suggestions": "One sentence: either praise if optimal, or a concrete tip to improve space efficiency."
   },
   "isOptimal": true
 }

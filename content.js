@@ -55,19 +55,25 @@
   }
 
   function isDetailPage() {
-    return DETAIL_PAGE_RE.test(location.pathname);
+    const isSubUrl = DETAIL_PAGE_RE.test(location.pathname);
+    const hasAnalysisBtn = !!findOfficialAnalysisButton();
+    return isSubUrl || hasAnalysisBtn;
   }
 
   function tryHookButton() {
     if (!isDetailPage()) return;
 
     if (document.getElementById(`${COMPONENT_PREFIX}-btn`)) {
-      autoLoadOrTrigger();
+      const approachCard = document.getElementById(`${COMPONENT_PREFIX}-approach`);
+      const effCard = document.getElementById(`${COMPONENT_PREFIX}-efficiency`);
+      if (!approachCard || !effCard) {
+        autoLoadOrTrigger();
+      }
       return;
     }
 
     const officialBtn = findOfficialAnalysisButton();
-    const payload = extractSubmissionData();
+    const payload = extractSubmissionData(officialBtn);
 
     if (!officialBtn || !payload.code || !payload.problemTitle) {
       if (extractionRetries < MAX_RETRIES) {
@@ -206,7 +212,7 @@
     triggerAnalysis(payload);
   }
 
-  function extractSubmissionData() {
+  function extractSubmissionData(officialBtn) {
     const data = { code: "", language: "unknown", problemTitle: "" };
     try {
       const titleMatch = document.title.match(/^(.*?)\s*-\s*LeetCode/i);
@@ -220,18 +226,81 @@
         }
       }
 
-      const monacoEditor = document.querySelector(".monaco-editor");
-      if (monacoEditor) {
-        const lines = monacoEditor.querySelectorAll(".view-line");
-        if (lines.length > 0) data.code = Array.from(lines).map(l => l.textContent).join("\n").trim();
+      const activeBtn = officialBtn || findOfficialAnalysisButton();
+      let codeContainer = null;
+      let codeType = "";
+
+      if (activeBtn) {
+        let parent = activeBtn.parentElement;
+        while (parent && parent !== document.body) {
+          const monaco = parent.querySelector(".monaco-editor");
+          if (monaco) {
+            codeContainer = monaco;
+            codeType = "monaco";
+            break;
+          }
+          const pre = parent.querySelector("pre");
+          if (pre) {
+            codeContainer = pre;
+            codeType = "pre";
+            break;
+          }
+          const codeEl = parent.querySelector("code");
+          if (codeEl) {
+            codeContainer = codeEl;
+            codeType = "code";
+            break;
+          }
+          parent = parent.parentElement;
+        }
       }
-      if (!data.code) {
+
+      if (!codeContainer) {
+        const monacoEditors = document.querySelectorAll(".monaco-editor");
+        if (monacoEditors.length > 0) {
+          let found = false;
+          for (let i = monacoEditors.length - 1; i >= 0; i--) {
+            const editor = monacoEditors[i];
+            const lines = editor.querySelectorAll(".view-line");
+            if (lines.length > 0) {
+              codeContainer = editor;
+              codeType = "monaco";
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            codeContainer = monacoEditors[0];
+            codeType = "monaco";
+          }
+        }
+      }
+
+      if (!codeContainer) {
         const pre = document.querySelector("pre");
-        if (pre) data.code = pre.textContent.trim();
+        if (pre) {
+          codeContainer = pre;
+          codeType = "pre";
+        }
       }
-      if (!data.code) {
+
+      if (!codeContainer) {
         const codeEl = document.querySelector("code");
-        if (codeEl) data.code = codeEl.textContent.trim();
+        if (codeEl) {
+          codeContainer = codeEl;
+          codeType = "code";
+        }
+      }
+
+      if (codeContainer) {
+        if (codeType === "monaco") {
+          const lines = codeContainer.querySelectorAll(".view-line");
+          if (lines.length > 0) {
+            data.code = Array.from(lines).map(l => l.textContent).join("\n").trim();
+          }
+        } else {
+          data.code = codeContainer.textContent.trim();
+        }
       }
     } catch (_) { }
     return data;
@@ -378,12 +447,81 @@
     </svg>`;
   }
 
+  let lastAnalysisData = null;
+  let activeTab = "time";
+
+  function updateEfficiencyCard() {
+    const effCard = document.getElementById(`${COMPONENT_PREFIX}-efficiency`);
+    if (!effCard || !lastAnalysisData) return;
+
+    let currentComplexity = "—";
+    let suggestedComplexity = "—";
+    let suggestions = "";
+
+    if (activeTab === "time") {
+      const timeEff = lastAnalysisData.timeComplexity || {};
+      currentComplexity = timeEff.current || lastAnalysisData.efficiency?.currentComplexity || "—";
+      suggestedComplexity = timeEff.suggested || lastAnalysisData.efficiency?.suggestedComplexity || "—";
+      suggestions = timeEff.suggestions || lastAnalysisData.efficiency?.suggestions || "";
+    } else {
+      const spaceEff = lastAnalysisData.spaceComplexity || {};
+      currentComplexity = spaceEff.current || "—";
+      suggestedComplexity = spaceEff.suggested || "—";
+      suggestions = spaceEff.suggestions || "";
+    }
+
+    const labelPrefix = activeTab === "time" ? "time" : "space";
+    const sectionTitle = activeTab === "time" ? "Efficiency (Runtime)" : "Efficiency (Memory)";
+
+    const effBody = effCard.querySelector(".rc-eff-body");
+    if (effBody) {
+      effBody.innerHTML = `
+        <div class="rc-eff-left">
+          <div class="rc-section-title">
+            ${sectionTitle}
+          </div>
+          <div class="rc-row"><span class="rc-label">Current ${labelPrefix} complexity</span><span class="rc-val rc-mono">${currentComplexity}</span></div>
+          <div class="rc-row"><span class="rc-label">Suggested ${labelPrefix} complexity</span><span class="rc-val rc-suggested rc-mono">${suggestedComplexity}</span></div>
+          ${suggestions ? `<div class="rc-row"><span class="rc-label">Suggestions</span><span class="rc-val">${suggestions}</span></div>` : ""}
+        </div>
+        <div class="rc-graph">
+          ${drawComplexityGraph(suggestedComplexity)}
+        </div>
+      `;
+    }
+  }
+
+  function hookStatsTabs(statsCard, onSwitchTab) {
+    if (!statsCard) return;
+    if (statsCard.dataset.rustynListenerAttached) return;
+    statsCard.dataset.rustynListenerAttached = "true";
+
+    statsCard.addEventListener("click", (e) => {
+      let curr = e.target;
+      while (curr && curr !== statsCard) {
+        const text = curr.textContent || "";
+        const hasRuntime = /runtime/i.test(text);
+        const hasMemory = /memory/i.test(text);
+        if (hasRuntime && !hasMemory) {
+          onSwitchTab("time");
+          break;
+        }
+        if (hasMemory && !hasRuntime) {
+          onSwitchTab("space");
+          break;
+        }
+        curr = curr.parentElement;
+      }
+    });
+  }
+
   function renderAnalysis(data) {
     removeAllCards();
+    lastAnalysisData = data;
+    activeTab = "time";
 
     const checks = data.checks || { approach: true, efficiency: true, codeStyle: true };
     const approach = data.approach || {};
-    const eff = data.efficiency || {};
 
     const checkMark = (ok) => ok
       ? `<span class="rc-check ok">&#10003;</span>`
@@ -392,6 +530,12 @@
     const approachCard = document.createElement("div");
     approachCard.id = `${COMPONENT_PREFIX}-approach`;
     approachCard.className = `${COMPONENT_PREFIX}-panel`;
+
+    const hasIssues = !checks.approach || !checks.efficiency || !checks.codeStyle;
+    const issueHtml = (hasIssues && data.issueReason) 
+      ? `<div class="rc-issue-reason-box"><span class="rc-issue-label">Code Issue Reason:</span><span class="rc-issue-val">${data.issueReason}</span></div>`
+      : "";
+
     approachCard.innerHTML = `
       <div class="rc-checks-row">
         ${checkMark(checks.approach)} <span>Approach</span>
@@ -399,12 +543,14 @@
         ${checkMark(checks.codeStyle)} <span>Code Style</span>
       </div>
       ${data.congratulations ? `<p class="rc-congrats">${data.congratulations}</p>` : ""}
+      ${issueHtml}
       <div class="rc-section-title">
         Approach
       </div>
       <div class="rc-row"><span class="rc-label">Current</span><span class="rc-val">${approach.current || "—"}</span></div>
       <div class="rc-row"><span class="rc-label">Suggested</span><span class="rc-val rc-suggested">${approach.suggested || "—"}</span></div>
       ${approach.keyIdea ? `<div class="rc-row"><span class="rc-label">Key Idea</span><span class="rc-val">${approach.keyIdea}</span></div>` : ""}
+      ${approach.alternatives ? `<div class="rc-row"><span class="rc-label">Alternatives</span><span class="rc-val">${approach.alternatives}</span></div>` : ""}
       ${approach.consider ? `<div class="rc-row"><span class="rc-label">Consider</span><span class="rc-val rc-italic">${approach.consider}</span></div>` : ""}
     `;
     insertBeforeStats(approachCard);
@@ -412,22 +558,20 @@
     const effCard = document.createElement("div");
     effCard.id = `${COMPONENT_PREFIX}-efficiency`;
     effCard.className = `${COMPONENT_PREFIX}-panel`;
-    effCard.innerHTML = `
-      <div class="rc-eff-body">
-        <div class="rc-eff-left">
-          <div class="rc-section-title">
-            Efficiency
-          </div>
-          <div class="rc-row"><span class="rc-label">Current complexity</span><span class="rc-val rc-mono">${eff.currentComplexity || "—"}</span></div>
-          <div class="rc-row"><span class="rc-label">Suggested complexity</span><span class="rc-val rc-suggested rc-mono">${eff.suggestedComplexity || "—"}</span></div>
-          ${eff.suggestions ? `<div class="rc-row"><span class="rc-label">Suggestions</span><span class="rc-val">${eff.suggestions}</span></div>` : ""}
-        </div>
-        <div class="rc-graph">
-          ${drawComplexityGraph(eff.suggestedComplexity)}
-        </div>
-      </div>
-    `;
+    effCard.innerHTML = `<div class="rc-eff-body"></div>`;
     insertAfterStats(effCard);
+
+    updateEfficiencyCard();
+
+    const statsCard = findStatsCardWithinDetail();
+    if (statsCard) {
+      hookStatsTabs(statsCard, (tab) => {
+        if (activeTab !== tab) {
+          activeTab = tab;
+          updateEfficiencyCard();
+        }
+      });
+    }
 
     approachCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
