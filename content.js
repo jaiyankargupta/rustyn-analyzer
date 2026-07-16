@@ -238,16 +238,44 @@
     triggerAnalysis(payload);
   }
 
-  function extractSubmissionStatus() {
+  function extractSubmissionStatus(officialBtn) {
     const statuses = [
       "Wrong Answer", "Time Limit Exceeded", "Runtime Error",
       "Compile Error", "Memory Limit Exceeded", "Output Limit Exceeded",
       "Accepted"
     ];
+    const activeBtn = officialBtn || findAnchorButton();
+    if (activeBtn) {
+      let curr = activeBtn.parentElement;
+      while (curr && curr !== document.body) {
+        for (const status of statuses) {
+          const elements = curr.querySelectorAll("div, span, h1, h2, h3, p, a");
+          for (const el of elements) {
+            if (el.textContent && el.children.length === 0) {
+              const txt = el.textContent.trim().toLowerCase();
+              if (txt === status.toLowerCase()) {
+                return status;
+              }
+            }
+          }
+        }
+        for (const status of statuses) {
+          const elements = curr.querySelectorAll("div, span, h1, h2, h3, p, a");
+          for (const el of elements) {
+            if (el.textContent && el.children.length === 0 && el.textContent.includes(status)) {
+              return status;
+            }
+          }
+        }
+        curr = curr.parentElement;
+      }
+    }
+
+    // Fallback: document-wide exact match
     for (const status of statuses) {
       const elements = document.querySelectorAll("div, span, h1, h2, h3, p, a");
       for (const el of elements) {
-        if (el.textContent) {
+        if (el.textContent && el.children.length === 0) {
           const txt = el.textContent.trim().toLowerCase();
           if (txt === status.toLowerCase()) {
             return status;
@@ -255,6 +283,7 @@
         }
       }
     }
+    // Fallback: document-wide substring match
     for (const status of statuses) {
       const elements = document.querySelectorAll("div, span, h1, h2, h3, p, a");
       for (const el of elements) {
@@ -280,7 +309,7 @@
         }
       }
 
-      data.status = extractSubmissionStatus();
+      data.status = extractSubmissionStatus(officialBtn);
 
       const activeBtn = officialBtn || findAnchorButton();
       let codeContainer = null;
@@ -671,11 +700,20 @@
     approachCard.id = `${COMPONENT_PREFIX}-approach`;
     approachCard.className = `${COMPONENT_PREFIX}-panel`;
 
+    let issueLabel = "Code Issue Reason:";
+    if (!checks.approach) {
+      issueLabel = "Logical Flaw Identified:";
+    } else if (!checks.efficiency) {
+      issueLabel = "Efficiency Issue Identified:";
+    } else if (!checks.codeStyle) {
+      issueLabel = "Code Style Issue Identified:";
+    }
+
     const hasIssues = !checks.approach || !checks.efficiency || !checks.codeStyle;
     const issueHtml = (hasIssues && data.issueReason)
       ? `<div class="rc-issue-reason-box">
            <div class="rc-issue-title-row">
-             <span class="rc-issue-label">Code Issue Reason:</span>
+             <span class="rc-issue-label">${issueLabel}</span>
            </div>
            <div class="rc-issue-val">${data.issueReason}</div>
          </div>`
@@ -704,7 +742,7 @@
       const issueHtmlFailed = data.issueReason
         ? `<div class="rc-issue-reason-box">
              <div class="rc-issue-title-row">
-               <span class="rc-issue-label">Logical Flaw Identified:</span>
+               <span class="rc-issue-label">${issueLabel}</span>
              </div>
              <div class="rc-issue-val">${data.issueReason}</div>
            </div>`
