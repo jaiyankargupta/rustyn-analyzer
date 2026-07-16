@@ -8,6 +8,7 @@
   let injectedButton = null;
   let extractionRetries = 0;
   const MAX_RETRIES = 15;
+  let lastStatusText = "";
 
   if (window.__rustynAnalyzerActive) return;
   window.__rustynAnalyzerActive = true;
@@ -25,6 +26,12 @@
   }
 
   const observer = makeGuardedObserver(() => {
+    const currentStatus = extractSubmissionStatus();
+    if (currentStatus !== lastStatusText) {
+      lastStatusText = currentStatus;
+      extractionRetries = 0;
+    }
+
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       onNavigate();
@@ -56,8 +63,8 @@
 
   function isDetailPage() {
     const isSubUrl = DETAIL_PAGE_RE.test(location.pathname);
-    const hasAnalysisBtn = !!findOfficialAnalysisButton();
-    return isSubUrl || hasAnalysisBtn;
+    const hasAnchorBtn = !!findAnchorButton();
+    return isSubUrl || hasAnchorBtn;
   }
 
   function tryHookButton() {
@@ -72,10 +79,10 @@
       return;
     }
 
-    const officialBtn = findOfficialAnalysisButton();
-    const payload = extractSubmissionData(officialBtn);
+    const anchorBtn = findAnchorButton();
+    const payload = extractSubmissionData(anchorBtn);
 
-    if (!officialBtn || !payload.code || !payload.problemTitle) {
+    if (!anchorBtn || !payload.code || !payload.problemTitle) {
       if (extractionRetries < MAX_RETRIES) {
         extractionRetries++;
         scheduleHook();
@@ -83,14 +90,20 @@
       return;
     }
 
-    hookButton(officialBtn);
+    hookButton(anchorBtn);
     autoLoadOrTrigger(payload);
   }
 
-  function findOfficialAnalysisButton() {
+  function findAnchorButton() {
     for (const btn of document.querySelectorAll("button")) {
       const text = (btn.textContent || "").trim();
       if (/^analysis$/i.test(text)) {
+        return btn;
+      }
+    }
+    for (const btn of document.querySelectorAll("button")) {
+      const text = (btn.textContent || "").trim();
+      if (/^solution$/i.test(text)) {
         return btn;
       }
     }
@@ -128,6 +141,8 @@
     while (textNode = walk.nextNode()) {
       if (/analysis/i.test(textNode.nodeValue)) {
         textNode.nodeValue = textNode.nodeValue.replace(/analysis/i, "Rustyn Analyzer");
+      } else if (/solution/i.test(textNode.nodeValue)) {
+        textNode.nodeValue = textNode.nodeValue.replace(/solution/i, "Rustyn Analyzer");
       }
     }
 
@@ -188,7 +203,7 @@
       chrome.storage.local.get([cacheKey], (result) => {
         if (!isExtensionAlive()) return;
         const cached = result[cacheKey];
-        if (cached && cached.code === payload.code) {
+        if (cached && cached.code === payload.code && cached.status === payload.status) {
           renderAnalysis(cached.data);
         } else {
           triggerAnalysis(payload);
@@ -212,8 +227,36 @@
     triggerAnalysis(payload);
   }
 
+  function extractSubmissionStatus() {
+    const statuses = [
+      "Wrong Answer", "Time Limit Exceeded", "Runtime Error",
+      "Compile Error", "Memory Limit Exceeded", "Output Limit Exceeded",
+      "Accepted"
+    ];
+    for (const status of statuses) {
+      const elements = document.querySelectorAll("div, span, h1, h2, h3, p, a");
+      for (const el of elements) {
+        if (el.textContent) {
+          const txt = el.textContent.trim().toLowerCase();
+          if (txt === status.toLowerCase()) {
+            return status;
+          }
+        }
+      }
+    }
+    for (const status of statuses) {
+      const elements = document.querySelectorAll("div, span, h1, h2, h3, p, a");
+      for (const el of elements) {
+        if (el.textContent && el.textContent.includes(status)) {
+          return status;
+        }
+      }
+    }
+    return "Accepted";
+  }
+
   function extractSubmissionData(officialBtn) {
-    const data = { code: "", language: "unknown", problemTitle: "" };
+    const data = { code: "", language: "unknown", problemTitle: "", status: "Accepted" };
     try {
       const titleMatch = document.title.match(/^(.*?)\s*-\s*LeetCode/i);
       if (titleMatch && titleMatch[1]) {
@@ -226,7 +269,9 @@
         }
       }
 
-      const activeBtn = officialBtn || findOfficialAnalysisButton();
+      data.status = extractSubmissionStatus();
+
+      const activeBtn = officialBtn || findAnchorButton();
       let codeContainer = null;
       let codeType = "";
 
@@ -329,7 +374,8 @@
         resetButton();
         if (chrome.runtime.lastError) { showError("Extension context lost. Please refresh the page."); return; }
         if (response && response.success) {
-          const cacheData = { code: payload.code, data: response.data };
+          response.data.status = payload.status;
+          const cacheData = { code: payload.code, status: payload.status, data: response.data };
           chrome.storage.local.set({ [cacheKey]: cacheData }, () => {
             if (chrome.runtime.lastError) { }
           });
@@ -345,10 +391,10 @@
   }
 
   function findStatsCardWithinDetail() {
-    const officialBtn = findOfficialAnalysisButton();
-    if (!officialBtn) return null;
+    const anchorBtn = findAnchorButton();
+    if (!anchorBtn) return null;
 
-    let parent = officialBtn.parentElement;
+    let parent = anchorBtn.parentElement;
     while (parent) {
       const txt = parent.textContent || "";
       if (/runtime/i.test(txt) && /memory/i.test(txt) && /beats/i.test(txt)) {
@@ -373,19 +419,70 @@
     return null;
   }
 
-  function insertBeforeStats(el) {
+  function findExpectedCard() {
+    const elements = document.querySelectorAll("div, span, p, h1, h2, h3");
+    for (const el of elements) {
+      if (el.textContent && el.textContent.trim() === "Expected") {
+        let curr = el;
+        while (curr && curr.parentElement) {
+          if (curr.parentElement.querySelector(".monaco-editor") || curr.parentElement.querySelector("pre") || curr.parentElement.textContent.includes("Input")) {
+            return curr;
+          }
+          curr = curr.parentElement;
+        }
+      }
+    }
+    return null;
+  }
+
+  function findInsertionAnchor() {
     const statsCard = findStatsCardWithinDetail();
-    if (statsCard && statsCard.parentNode) {
-      statsCard.parentNode.insertBefore(el, statsCard);
+    if (statsCard) {
+      return { element: statsCard, position: "stats" };
+    }
+
+    const expectedCard = findExpectedCard();
+    if (expectedCard) {
+      return { element: expectedCard, position: "after" };
+    }
+
+    const anchorBtn = findAnchorButton();
+    if (anchorBtn) {
+      let parent = anchorBtn.parentElement;
+      while (parent && parent !== document.body) {
+        const monaco = parent.querySelector(".monaco-editor");
+        if (monaco) return { element: monaco, position: "before" };
+        const pre = parent.querySelector("pre");
+        if (pre) return { element: pre, position: "before" };
+        const codeEl = parent.querySelector("code");
+        if (codeEl) return { element: codeEl, position: "before" };
+        parent = parent.parentElement;
+      }
+    }
+    return null;
+  }
+
+  function insertBeforeStats(el) {
+    const anchor = findInsertionAnchor();
+    if (anchor && anchor.element && anchor.element.parentNode) {
+      if (anchor.position === "after") {
+        anchor.element.parentNode.insertBefore(el, anchor.element.nextSibling);
+      } else {
+        anchor.element.parentNode.insertBefore(el, anchor.element);
+      }
     } else {
       (document.querySelector("main, #app, body") || document.body).appendChild(el);
     }
   }
 
   function insertAfterStats(el) {
-    const statsCard = findStatsCardWithinDetail();
-    if (statsCard && statsCard.parentNode) {
-      statsCard.parentNode.insertBefore(el, statsCard.nextSibling);
+    const anchor = findInsertionAnchor();
+    if (anchor && anchor.element && anchor.element.parentNode) {
+      if (anchor.position === "stats" || anchor.position === "after") {
+        anchor.element.parentNode.insertBefore(el, anchor.element.nextSibling);
+      } else {
+        anchor.element.parentNode.insertBefore(el, anchor.element.nextSibling);
+      }
     } else {
       (document.querySelector("main, #app, body") || document.body).appendChild(el);
     }
@@ -449,7 +546,6 @@
 
   let lastAnalysisData = null;
   let activeTab = "time";
-
   function updateEfficiencyCard() {
     const effCard = document.getElementById(`${COMPONENT_PREFIX}-efficiency`);
     if (!effCard || !lastAnalysisData) return;
@@ -473,21 +569,53 @@
     const labelPrefix = activeTab === "time" ? "time" : "space";
     const sectionTitle = activeTab === "time" ? "Efficiency (Runtime)" : "Efficiency (Memory)";
 
+    const statsCard = findStatsCardWithinDetail();
+    const tabHtml = statsCard ? "" : `
+      <div class="rc-tab-container">
+        <button class="rc-tab-btn ${activeTab === 'time' ? 'active' : ''}" id="${COMPONENT_PREFIX}-tab-time">Runtime</button>
+        <button class="rc-tab-btn ${activeTab === 'space' ? 'active' : ''}" id="${COMPONENT_PREFIX}-tab-space">Memory</button>
+      </div>
+    `;
+
     const effBody = effCard.querySelector(".rc-eff-body");
     if (effBody) {
       effBody.innerHTML = `
-        <div class="rc-eff-left">
-          <div class="rc-section-title">
-            ${sectionTitle}
+        <div style="width: 100%;">
+          ${tabHtml}
+          <div style="display: flex; align-items: flex-start; gap: 16px;">
+            <div class="rc-eff-left">
+              <div class="rc-section-title">
+                ${sectionTitle}
+              </div>
+              <div class="rc-row"><span class="rc-label">Current ${labelPrefix} complexity</span><span class="rc-val rc-mono">${currentComplexity}</span></div>
+              <div class="rc-row"><span class="rc-label">Suggested ${labelPrefix} complexity</span><span class="rc-val rc-suggested rc-mono">${suggestedComplexity}</span></div>
+              ${suggestions ? `<div class="rc-row"><span class="rc-label">Suggestions</span><span class="rc-val">${suggestions}</span></div>` : ""}
+            </div>
+            <div class="rc-graph">
+              ${drawComplexityGraph(suggestedComplexity)}
+            </div>
           </div>
-          <div class="rc-row"><span class="rc-label">Current ${labelPrefix} complexity</span><span class="rc-val rc-mono">${currentComplexity}</span></div>
-          <div class="rc-row"><span class="rc-label">Suggested ${labelPrefix} complexity</span><span class="rc-val rc-suggested rc-mono">${suggestedComplexity}</span></div>
-          ${suggestions ? `<div class="rc-row"><span class="rc-label">Suggestions</span><span class="rc-val">${suggestions}</span></div>` : ""}
-        </div>
-        <div class="rc-graph">
-          ${drawComplexityGraph(suggestedComplexity)}
         </div>
       `;
+
+      if (!statsCard) {
+        const timeBtn = document.getElementById(`${COMPONENT_PREFIX}-tab-time`);
+        const spaceBtn = document.getElementById(`${COMPONENT_PREFIX}-tab-space`);
+        if (timeBtn && spaceBtn) {
+          timeBtn.addEventListener("click", () => {
+            if (activeTab !== "time") {
+              activeTab = "time";
+              updateEfficiencyCard();
+            }
+          });
+          spaceBtn.addEventListener("click", () => {
+            if (activeTab !== "space") {
+              activeTab = "space";
+              updateEfficiencyCard();
+            }
+          });
+        }
+      }
     }
   }
 
@@ -520,6 +648,7 @@
     lastAnalysisData = data;
     activeTab = "time";
 
+    const isAccepted = (data.status === "Accepted");
     const checks = data.checks || { approach: true, efficiency: true, codeStyle: true };
     const approach = data.approach || {};
 
@@ -532,45 +661,75 @@
     approachCard.className = `${COMPONENT_PREFIX}-panel`;
 
     const hasIssues = !checks.approach || !checks.efficiency || !checks.codeStyle;
-    const issueHtml = (hasIssues && data.issueReason) 
-      ? `<div class="rc-issue-reason-box"><span class="rc-issue-label">Code Issue Reason:</span><span class="rc-issue-val">${data.issueReason}</span></div>`
+    const issueHtml = (hasIssues && data.issueReason)
+      ? `<div class="rc-issue-reason-box">
+           <div class="rc-issue-title-row">
+             <span class="rc-issue-label">Code Issue Reason:</span>
+           </div>
+           <div class="rc-issue-val">${data.issueReason}</div>
+         </div>`
       : "";
 
-    approachCard.innerHTML = `
-      <div class="rc-checks-row">
-        ${checkMark(checks.approach)} <span>Approach</span>
-        ${checkMark(checks.efficiency)} <span>Efficiency</span>
-        ${checkMark(checks.codeStyle)} <span>Code Style</span>
-      </div>
-      ${data.congratulations ? `<p class="rc-congrats">${data.congratulations}</p>` : ""}
-      ${issueHtml}
-      <div class="rc-section-title">
-        Approach
-      </div>
-      <div class="rc-row"><span class="rc-label">Current</span><span class="rc-val">${approach.current || "—"}</span></div>
-      <div class="rc-row"><span class="rc-label">Suggested</span><span class="rc-val rc-suggested">${approach.suggested || "—"}</span></div>
-      ${approach.keyIdea ? `<div class="rc-row"><span class="rc-label">Key Idea</span><span class="rc-val">${approach.keyIdea}</span></div>` : ""}
-      ${approach.alternatives ? `<div class="rc-row"><span class="rc-label">Alternatives</span><span class="rc-val">${approach.alternatives}</span></div>` : ""}
-      ${approach.consider ? `<div class="rc-row"><span class="rc-label">Consider</span><span class="rc-val rc-italic">${approach.consider}</span></div>` : ""}
-    `;
+    if (isAccepted) {
+      approachCard.innerHTML = `
+        <div class="rc-checks-row">
+          ${checkMark(checks.approach)} <span>Approach</span>
+          ${checkMark(checks.efficiency)} <span>Efficiency</span>
+          ${checkMark(checks.codeStyle)} <span>Code Style</span>
+        </div>
+        ${data.congratulations ? `<p class="rc-congrats">${data.congratulations}</p>` : ""}
+        ${issueHtml}
+        <div class="rc-section-title">
+          Approach
+        </div>
+        <div class="rc-row"><span class="rc-label">Current</span><span class="rc-val">${approach.current || "—"}</span></div>
+        <div class="rc-row"><span class="rc-label">Suggested</span><span class="rc-val rc-suggested">${approach.suggested || "—"}</span></div>
+        ${approach.keyIdea ? `<div class="rc-row"><span class="rc-label">Key Idea</span><span class="rc-val">${approach.keyIdea}</span></div>` : ""}
+        ${approach.alternatives ? `<div class="rc-row"><span class="rc-label">Alternatives</span><span class="rc-val">${approach.alternatives}</span></div>` : ""}
+        ${approach.consider ? `<div class="rc-row"><span class="rc-label">Consider</span><span class="rc-val rc-italic">${approach.consider}</span></div>` : ""}
+      `;
+    } else {
+      // Failed submission: only show congratulations feedback and the Code Issue Reason box
+      const issueHtmlFailed = data.issueReason
+        ? `<div class="rc-issue-reason-box">
+             <div class="rc-issue-title-row">
+               <span class="rc-issue-label">Logical Flaw Identified:</span>
+             </div>
+             <div class="rc-issue-val">${data.issueReason}</div>
+           </div>`
+        : "";
+
+      approachCard.innerHTML = `
+        <div class="rc-failed-header">
+          <svg class="rc-failed-svg" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+          </svg>
+          <span>Feedback & Correction Hints</span>
+        </div>
+        ${data.congratulations ? `<p class="rc-failed-intro">${data.congratulations}</p>` : ""}
+        ${issueHtmlFailed}
+      `;
+    }
     insertBeforeStats(approachCard);
 
-    const effCard = document.createElement("div");
-    effCard.id = `${COMPONENT_PREFIX}-efficiency`;
-    effCard.className = `${COMPONENT_PREFIX}-panel`;
-    effCard.innerHTML = `<div class="rc-eff-body"></div>`;
-    insertAfterStats(effCard);
+    if (isAccepted) {
+      const effCard = document.createElement("div");
+      effCard.id = `${COMPONENT_PREFIX}-efficiency`;
+      effCard.className = `${COMPONENT_PREFIX}-panel`;
+      effCard.innerHTML = `<div class="rc-eff-body"></div>`;
+      insertAfterStats(effCard);
 
-    updateEfficiencyCard();
+      updateEfficiencyCard();
 
-    const statsCard = findStatsCardWithinDetail();
-    if (statsCard) {
-      hookStatsTabs(statsCard, (tab) => {
-        if (activeTab !== tab) {
-          activeTab = tab;
-          updateEfficiencyCard();
-        }
-      });
+      const statsCard = findStatsCardWithinDetail();
+      if (statsCard) {
+        hookStatsTabs(statsCard, (tab) => {
+          if (activeTab !== tab) {
+            activeTab = tab;
+            updateEfficiencyCard();
+          }
+        });
+      }
     }
 
     approachCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
